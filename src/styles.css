@@ -300,9 +300,8 @@
     transform 160ms ease,
     box-shadow 220ms ease,
     filter 220ms ease;
-}
-@utility btn-glow {
   &:hover:not(:disabled) {
+
     transform: translateY(-1px) scale(1.02);
     filter: brightness(1.12) saturate(1.15);
     box-shadow:
