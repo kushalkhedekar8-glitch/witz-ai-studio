@@ -82,6 +82,9 @@ function Studio() {
 
   const active = STUDIO_MODELS.find((m) => m.id === model)!;
 
+  const lastAssistant = [...messages].reverse().find((m) => m.role === "assistant");
+  const artifact = lastAssistant ? extractArtifact(lastAssistant.content) : null;
+
   return (
     <div className="flex min-h-screen gap-4 p-4 md:gap-4 md:p-5">
       {/* Sidebar */}
