@@ -243,6 +243,10 @@ function Studio() {
             )}
           </div>
 
+          {artifact && <ArtifactPanel artifact={artifact} />}
+
+
+
           {/* Composer */}
           <div className="glass-strong mt-4 rounded-3xl p-3">
             <textarea
