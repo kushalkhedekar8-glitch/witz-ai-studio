@@ -6,7 +6,7 @@ const FENCE = /```([a-zA-Z0-9+#-]*)\n([\s\S]*?)```/g;
 export function extractArtifact(text: string): Artifact | null {
   const blocks: Artifact[] = [];
   for (const m of text.matchAll(FENCE)) {
-    blocks.push({ lang: (m[1] || "text").toLowerCase(), code: m[2].trim() });
+    blocks.push({ lang: (m[1] || "text").toLowerCase(), code: (m[2] ?? "").trim() });
   }
   if (blocks.length === 0) return null;
   const web = blocks.filter((b) => ["html", "htm", "svg"].includes(b.lang));

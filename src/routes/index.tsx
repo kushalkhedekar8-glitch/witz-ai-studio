@@ -17,6 +17,8 @@ import {
 } from "lucide-react";
 import { STUDIO_MODELS, DEFAULT_MODEL } from "@/lib/models";
 import { runStudio } from "@/lib/studio.functions";
+import { extractArtifact } from "@/lib/artifact";
+import { ArtifactPanel } from "@/components/ArtifactPanel";
 
 export const Route = createFileRoute("/")({
   head: () => ({
