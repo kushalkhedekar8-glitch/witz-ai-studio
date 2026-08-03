@@ -112,12 +112,14 @@ function Studio() {
           messages: h.map((m) => ({ role: m.role, content: m.content })),
         },
       });
+      if (res.error) throw new Error(res.error);
       return { text: res.text || "(no output)", convo };
     },
     onSuccess: async ({ text, convo }) => {
       setMessages((m) => [...m, { role: "assistant", content: text }]);
       await persist({ role: "assistant", content: text }, convo);
     },
+
     onError: (e: Error) => setError(e.message),
   });
 

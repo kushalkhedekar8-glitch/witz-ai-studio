@@ -63,31 +63,66 @@ const SYSTEM_PROMPT =
   "When asked for code, return clean, production-ready code in fenced blocks. " +
   "Never reveal or discuss which underlying provider or model powers you; you are simply the studio engine the user selected.";
 
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 export const runStudio = createServerFn({ method: "POST" })
   .inputValidator((data: unknown) => schema.parse(data))
-  .handler(async ({ data }) => {
-    const route = resolveRoute(data.model, data.byok);
-
-    const res = await fetch(route.url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", ...route.headers() },
-      body: JSON.stringify({
-        model: route.model,
-        messages: [{ role: "system", content: SYSTEM_PROMPT }, ...data.messages],
-      }),
-    });
-
-    if (!res.ok) {
-      const detail = await res.text();
-      if (res.status === 401) throw new Error("That API key was rejected — check it and try again.");
-      if (res.status === 429) throw new Error("Rate limited — please try again in a moment.");
-      if (res.status === 402) throw new Error("This engine is out of credits.");
-      throw new Error(`Engine error (${res.status}): ${detail.slice(0, 300)}`);
+  .handler(async ({ data }): Promise<{ text: string; error?: string }> => {
+    let route: Route;
+    try {
+      route = resolveRoute(data.model, data.byok);
+    } catch (e) {
+      return { text: "", error: e instanceof Error ? e.message : "Engine unavailable." };
     }
 
-    const json = (await res.json()) as {
-      choices?: Array<{ message?: { content?: string } }>;
-    };
-    const text = json.choices?.[0]?.message?.content ?? "";
-    return { text };
+    const body = JSON.stringify({
+      model: route.model,
+      messages: [{ role: "system", content: SYSTEM_PROMPT }, ...data.messages],
+    });
+
+    // Retry transient rate limits / upstream hiccups with backoff.
+    for (let attempt = 0; attempt < 3; attempt++) {
+      let res: Response;
+      try {
+        res = await fetch(route.url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...route.headers() },
+          body,
+        });
+      } catch {
+        if (attempt < 2) {
+          await sleep(800 * (attempt + 1));
+          continue;
+        }
+        return { text: "", error: "Could not reach the engine. Check your connection and retry." };
+      }
+
+      if (res.ok) {
+        const json = (await res.json()) as {
+          choices?: Array<{ message?: { content?: string } }>;
+        };
+        return { text: json.choices?.[0]?.message?.content ?? "" };
+      }
+
+      const detail = await res.text();
+      const retryable = res.status === 429 || res.status >= 500;
+      if (retryable && attempt < 2) {
+        await sleep(1200 * (attempt + 1));
+        continue;
+      }
+
+      if (res.status === 401 || res.status === 403)
+        return { text: "", error: "That API key was rejected — check it and try again." };
+      if (res.status === 429)
+        return {
+          text: "",
+          error: "This engine is rate limited right now. Try again shortly or switch engines.",
+        };
+      if (res.status === 402)
+        return { text: "", error: "This engine is out of credits. Switch engines or add credits." };
+      return { text: "", error: `Engine error (${res.status}): ${detail.slice(0, 200)}` };
+    }
+
+    return { text: "", error: "The engine did not respond. Please try again." };
   });
+
