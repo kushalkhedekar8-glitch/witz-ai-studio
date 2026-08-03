@@ -77,12 +77,16 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Witz AI Studio" },
-      { name: "description", content: "A liquid-glass AI studio with multiple engines." },
-      { property: "og:title", content: "Witz AI Studio" },
-      { property: "og:description", content: "A liquid-glass AI studio with multiple engines." },
+      { title: "Witz AI Studio — Build with multiple AI engines" },
+      { name: "description", content: "Witz AI Studio is a neon liquid-glass workspace: prompt multiple AI engines, attach files, preview and ship generated code, and keep every session saved." },
+      { property: "og:title", content: "Witz AI Studio — Build with multiple AI engines" },
+      { property: "og:description", content: "Witz AI Studio is a neon liquid-glass workspace: prompt multiple AI engines, attach files, preview and ship generated code, and keep every session saved." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
+      { name: "twitter:title", content: "Witz AI Studio — Build with multiple AI engines" },
+      { name: "twitter:description", content: "Witz AI Studio is a neon liquid-glass workspace: prompt multiple AI engines, attach files, preview and ship generated code, and keep every session saved." },
+      { property: "og:image", content: "https://storage.googleapis.com/gpt-engineer-file-uploads/attachments/og-images/652ae130-2baa-4740-89df-e70598aeaab1" },
+      { name: "twitter:image", content: "https://storage.googleapis.com/gpt-engineer-file-uploads/attachments/og-images/652ae130-2baa-4740-89df-e70598aeaab1" },
     ],
     links: [
       {

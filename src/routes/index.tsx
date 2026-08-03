@@ -47,7 +47,7 @@ export const Route = createFileRoute("/")({
       {
         property: "og:description",
         content:
-          "A futuristic studio for prompting multiple AI engines, attaching files and generating production-ready code.",
+          "Witz AI Studio is a neon liquid-glass workspace: prompt multiple AI engines, attach files, preview and ship generated code, and keep every session saved.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
