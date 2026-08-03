@@ -266,3 +266,94 @@
   animation: witz-pulse 1.4s ease-in-out infinite;
 }
 
+/* ── Neon glow layer ──────────────────────────────────────────────────── */
+@keyframes witz-breathe {
+  0%,
+  100% {
+    box-shadow:
+      0 0 18px oklch(0.85 0.15 195 / 35%),
+      0 0 48px oklch(0.68 0.18 300 / 22%);
+  }
+  50% {
+    box-shadow:
+      0 0 30px oklch(0.85 0.15 195 / 60%),
+      0 0 78px oklch(0.68 0.18 300 / 38%);
+  }
+}
+
+/** Brightly glowing primary button. */
+@utility btn-glow {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  background-image: var(--gradient-brand);
+  color: oklch(0.16 0.03 250);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  border: 1px solid oklch(1 0 0 / 25%);
+  box-shadow:
+    0 0 22px oklch(0.85 0.15 195 / 45%),
+    0 0 60px oklch(0.68 0.18 300 / 28%),
+    inset 0 1px 0 oklch(1 0 0 / 45%);
+  transition:
+    transform 160ms ease,
+    box-shadow 220ms ease,
+    filter 220ms ease;
+  &:hover:not(:disabled) {
+
+    transform: translateY(-1px) scale(1.02);
+    filter: brightness(1.12) saturate(1.15);
+    box-shadow:
+      0 0 34px oklch(0.85 0.15 195 / 75%),
+      0 0 90px oklch(0.68 0.18 300 / 45%),
+      inset 0 1px 0 oklch(1 0 0 / 55%);
+  }
+  &:active:not(:disabled) {
+    transform: translateY(0) scale(0.99);
+  }
+}
+
+/** Glowing outline for cards/panels. */
+@utility glow-ring {
+  border: 1px solid oklch(0.85 0.15 195 / 30%);
+  box-shadow:
+    0 0 0 1px oklch(0.85 0.15 195 / 12%),
+    0 0 34px oklch(0.85 0.15 195 / 22%),
+    0 0 90px oklch(0.68 0.18 300 / 16%);
+}
+
+/** Card that lights up on hover. */
+@utility glow-hover {
+  transition:
+    transform 180ms ease,
+    box-shadow 240ms ease,
+    border-color 240ms ease;
+  &:hover {
+    transform: translateY(-2px);
+    border-color: oklch(0.85 0.15 195 / 55%);
+    box-shadow:
+      0 0 26px oklch(0.85 0.15 195 / 40%),
+      0 0 70px oklch(0.68 0.18 300 / 26%);
+  }
+}
+
+/** Uses --glow-color set inline per engine card. */
+@utility glow-accent {
+  border-color: color-mix(in oklch, var(--glow-color) 60%, transparent);
+  box-shadow:
+    0 0 24px color-mix(in oklch, var(--glow-color) 45%, transparent),
+    0 0 70px color-mix(in oklch, var(--glow-color) 24%, transparent);
+}
+
+@utility animate-witz-breathe {
+  animation: witz-breathe 3.2s ease-in-out infinite;
+}
+
+@utility text-glow {
+  text-shadow:
+    0 0 18px oklch(0.85 0.15 195 / 55%),
+    0 0 44px oklch(0.68 0.18 300 / 35%);
+}
+
+

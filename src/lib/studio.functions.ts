@@ -9,6 +9,14 @@ const schema = z.object({
       content: z.string(),
     }),
   ),
+  /** Optional bring-your-own-key config, supplied per request by the user. */
+  byok: z
+    .object({
+      baseUrl: z.string().url().optional(),
+      apiKey: z.string().min(8),
+      model: z.string().min(1),
+    })
+    .optional(),
 });
 
 type Route = {
@@ -17,7 +25,16 @@ type Route = {
   model: string;
 };
 
-function resolveRoute(id: string): Route {
+function resolveRoute(id: string, byok?: z.infer<typeof schema>["byok"]): Route {
+  if (id === "custom") {
+    if (!byok) throw new Error("Add your own API key in Settings to use this engine.");
+    const base = (byok.baseUrl ?? "https://openrouter.ai/api/v1").replace(/\/+$/, "");
+    return {
+      url: `${base}/chat/completions`,
+      headers: () => ({ Authorization: `Bearer ${byok.apiKey}` }),
+      model: byok.model,
+    };
+  }
   if (id === "cortex") {
     return {
       url: "https://ai.gateway.lovable.dev/v1/chat/completions",
@@ -49,7 +66,7 @@ const SYSTEM_PROMPT =
 export const runStudio = createServerFn({ method: "POST" })
   .inputValidator((data: unknown) => schema.parse(data))
   .handler(async ({ data }) => {
-    const route = resolveRoute(data.model);
+    const route = resolveRoute(data.model, data.byok);
 
     const res = await fetch(route.url, {
       method: "POST",
@@ -62,6 +79,7 @@ export const runStudio = createServerFn({ method: "POST" })
 
     if (!res.ok) {
       const detail = await res.text();
+      if (res.status === 401) throw new Error("That API key was rejected — check it and try again.");
       if (res.status === 429) throw new Error("Rate limited — please try again in a moment.");
       if (res.status === 402) throw new Error("This engine is out of credits.");
       throw new Error(`Engine error (${res.status}): ${detail.slice(0, 300)}`);

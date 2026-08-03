@@ -1,24 +1,38 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import {
   ArrowUp,
   Copy,
+  KeyRound,
   Layers,
-  LifeBuoy,
+  LogIn,
   LogOut,
+  MessageSquare,
+  Paperclip,
   Plus,
   Sparkles,
-  Star,
-  Home as HomeIcon,
-  Settings,
+  Trash2,
+  X,
   Loader2,
 } from "lucide-react";
 import { STUDIO_MODELS, DEFAULT_MODEL } from "@/lib/models";
 import { runStudio } from "@/lib/studio.functions";
 import { extractArtifact } from "@/lib/artifact";
 import { ArtifactPanel } from "@/components/ArtifactPanel";
+import { ApiKeyDialog } from "@/components/ApiKeyDialog";
+import { loadByok } from "@/lib/byok";
+import { useAuth } from "@/hooks/useAuth";
+import { supabase } from "@/integrations/supabase/client";
+import {
+  createConversation,
+  deleteConversation,
+  listConversations,
+  loadMessages,
+  saveMessage,
+  type ChatMsg,
+} from "@/lib/chats";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -27,13 +41,13 @@ export const Route = createFileRoute("/")({
       {
         name: "description",
         content:
-          "Witz AI Studio is a liquid-glass workspace where you prompt multiple AI engines to draft, reason and generate production-ready code.",
+          "Witz AI Studio is a neon liquid-glass workspace: prompt multiple AI engines, attach files, preview and ship generated code, and keep every session saved.",
       },
       { property: "og:title", content: "Witz AI Studio — Build with multiple AI engines" },
       {
         property: "og:description",
         content:
-          "A minimal, futuristic studio for prompting multiple AI engines and generating production-ready code.",
+          "A futuristic studio for prompting multiple AI engines, attaching files and generating production-ready code.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
@@ -42,8 +56,6 @@ export const Route = createFileRoute("/")({
   component: Studio,
 });
 
-type Msg = { role: "user" | "assistant"; content: string };
-
 const SUGGESTIONS = [
   "Glass login page",
   "SaaS pricing table",
@@ -51,18 +63,61 @@ const SUGGESTIONS = [
   "Crypto bento grid",
 ];
 
+type Attachment = { name: string; text: string };
+
+const MAX_ATTACHMENT_CHARS = 12000;
+
 function Studio() {
+  const { user, loading: authLoading } = useAuth();
+  const qc = useQueryClient();
   const [model, setModel] = useState(DEFAULT_MODEL);
   const [input, setInput] = useState("");
-  const [messages, setMessages] = useState<Msg[]>([]);
+  const [messages, setMessages] = useState<ChatMsg[]>([]);
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [conversationId, setConversationId] = useState<string | null>(null);
+  const [showKeys, setShowKeys] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const scroller = useRef<HTMLDivElement>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
   const call = useServerFn(runStudio);
 
+  const history = useQuery({
+    queryKey: ["conversations", user?.id],
+    queryFn: listConversations,
+    enabled: !!user,
+  });
+
+  const persist = async (msg: ChatMsg, convo: string | null) => {
+    if (!user) return convo;
+    let id = convo;
+    if (!id) {
+      id = await createConversation(user.id, msg.content || "New session", model);
+      setConversationId(id);
+    }
+    await saveMessage(id, user.id, msg);
+    qc.invalidateQueries({ queryKey: ["conversations", user.id] });
+    return id;
+  };
+
   const mutation = useMutation({
-    mutationFn: async (history: Msg[]) => call({ data: { model, messages: history } }),
-    onSuccess: (res) =>
-      setMessages((m) => [...m, { role: "assistant", content: res.text || "(no output)" }]),
+    mutationFn: async ({ history: h, convo }: { history: ChatMsg[]; convo: string | null }) => {
+      const byok = model === "custom" ? (loadByok() ?? undefined) : undefined;
+      if (model === "custom" && !byok) {
+        throw new Error("Add your own API key first (key icon in the header).");
+      }
+      const res = await call({
+        data: {
+          model,
+          byok,
+          messages: h.map((m) => ({ role: m.role, content: m.content })),
+        },
+      });
+      return { text: res.text || "(no output)", convo };
+    },
+    onSuccess: async ({ text, convo }) => {
+      setMessages((m) => [...m, { role: "assistant", content: text }]);
+      await persist({ role: "assistant", content: text }, convo);
+    },
     onError: (e: Error) => setError(e.message),
   });
 
@@ -70,72 +125,165 @@ function Studio() {
     scroller.current?.scrollTo({ top: scroller.current.scrollHeight, behavior: "smooth" });
   }, [messages, mutation.isPending]);
 
-  const send = (text: string) => {
+  const send = async (text: string) => {
     const value = text.trim();
-    if (!value || mutation.isPending) return;
+    if ((!value && attachments.length === 0) || mutation.isPending) return;
     setError(null);
-    const next: Msg[] = [...messages, { role: "user", content: value }];
+
+    const attachBlock = attachments
+      .map((a) => `\n\n--- Attached file: ${a.name} ---\n${a.text}`)
+      .join("");
+    const userMsg: ChatMsg = {
+      role: "user",
+      content: value + attachBlock,
+      attachments: attachments.map((a) => a.name),
+    };
+
+    const next = [...messages, userMsg];
     setMessages(next);
     setInput("");
-    mutation.mutate(next);
+    setAttachments([]);
+
+    let convo = conversationId;
+    try {
+      convo = (await persist(userMsg, convo)) ?? null;
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not save this message.");
+    }
+    mutation.mutate({ history: next, convo });
+  };
+
+  const onFiles = async (files: FileList | null) => {
+    if (!files) return;
+    const picked: Attachment[] = [];
+    for (const file of Array.from(files).slice(0, 4)) {
+      try {
+        const text = await file.text();
+        picked.push({
+          name: file.name,
+          text: text.slice(0, MAX_ATTACHMENT_CHARS) || "(binary or empty file)",
+        });
+      } catch {
+        picked.push({ name: file.name, text: "(unreadable file)" });
+      }
+    }
+    setAttachments((a) => [...a, ...picked].slice(0, 4));
+  };
+
+  const openConversation = async (id: string) => {
+    setError(null);
+    setConversationId(id);
+    try {
+      setMessages(await loadMessages(id));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not load that session.");
+    }
+  };
+
+  const newSession = () => {
+    setMessages([]);
+    setConversationId(null);
+    setAttachments([]);
+    setError(null);
   };
 
   const active = STUDIO_MODELS.find((m) => m.id === model)!;
-
   const lastAssistant = [...messages].reverse().find((m) => m.role === "assistant");
   const artifact = lastAssistant ? extractArtifact(lastAssistant.content) : null;
 
   return (
     <div className="flex min-h-screen gap-4 p-4 md:gap-4 md:p-5">
       {/* Sidebar */}
-      <aside className="glass hidden w-64 shrink-0 flex-col rounded-3xl p-4 lg:flex">
+      <aside className="glass glow-ring hidden w-68 shrink-0 flex-col rounded-3xl p-4 lg:flex">
         <div className="px-2 py-3">
-          <span className="font-display text-xl font-bold text-gradient">Witz AI Studio</span>
+          <span className="font-display text-gradient text-glow text-xl font-bold">
+            Witz AI Studio
+          </span>
         </div>
-        <button
-          onClick={() => {
-            setMessages([]);
-            setError(null);
-          }}
-          className="mt-2 inline-flex w-full items-center justify-center gap-2 rounded-full bg-gradient-brand px-4 py-3 text-sm font-semibold text-primary-foreground transition-transform hover:scale-[1.02]"
-        >
+        <button onClick={newSession} className="btn-glow mt-2 w-full rounded-full px-4 py-3 text-sm">
           <Plus className="size-4" /> New session
         </button>
-        <nav className="mt-6 space-y-1">
-          {[
-            { icon: HomeIcon, label: "Home", active: true },
-            { icon: Star, label: "Saved projects" },
-            { icon: Layers, label: "Templates" },
-          ].map((item) => (
+
+        <div className="mt-6 min-h-0 flex-1 overflow-y-auto pr-1">
+          <p className="label-mono px-3 pb-2 text-muted-foreground">Saved chats</p>
+          {!user && !authLoading && (
+            <Link
+              to="/auth"
+              className="glass glow-hover block rounded-2xl px-3 py-3 text-xs text-muted-foreground"
+            >
+              Sign in to keep every session, attachment and artifact saved.
+            </Link>
+          )}
+          {user && history.data?.length === 0 && (
+            <p className="px-3 text-xs text-muted-foreground">No saved chats yet.</p>
+          )}
+          {history.data?.map((c) => (
             <div
-              key={item.label}
-              className={`flex cursor-default items-center gap-3 rounded-2xl px-3 py-2.5 text-sm transition-colors ${
-                item.active
-                  ? "bg-glass-strong text-primary"
+              key={c.id}
+              className={`group flex items-center gap-2 rounded-2xl px-3 py-2.5 text-sm transition-colors ${
+                c.id === conversationId
+                  ? "bg-glass-strong glow-ring text-primary"
                   : "text-muted-foreground hover:bg-glass hover:text-foreground"
               }`}
             >
-              <item.icon className="size-4" />
-              {item.label}
+              <button
+                onClick={() => openConversation(c.id)}
+                className="flex min-w-0 flex-1 items-center gap-2 text-left"
+              >
+                <MessageSquare className="size-3.5 shrink-0" />
+                <span className="truncate">{c.title}</span>
+              </button>
+              <button
+                aria-label="Delete chat"
+                onClick={async () => {
+                  await deleteConversation(c.id);
+                  if (c.id === conversationId) newSession();
+                  qc.invalidateQueries({ queryKey: ["conversations", user?.id] });
+                }}
+                className="opacity-0 transition-opacity group-hover:opacity-100 hover:text-destructive"
+              >
+                <Trash2 className="size-3.5" />
+              </button>
             </div>
           ))}
-        </nav>
-        <div className="mt-auto space-y-1 pt-6 text-sm text-muted-foreground">
+        </div>
+
+        <div className="mt-auto space-y-1 pt-4 text-sm text-muted-foreground">
+          <button
+            onClick={() => setShowKeys(true)}
+            className="flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 hover:text-primary"
+          >
+            <KeyRound className="size-4" /> Your API key
+          </button>
           <div className="flex items-center gap-3 rounded-2xl px-3 py-2.5">
-            <LifeBuoy className="size-4" /> Help
+            <Layers className="size-4" /> {STUDIO_MODELS.length} engines
           </div>
-          <div className="flex items-center gap-3 rounded-2xl px-3 py-2.5">
-            <LogOut className="size-4" /> Logout
-          </div>
+          {user ? (
+            <button
+              onClick={() => {
+                supabase.auth.signOut();
+                newSession();
+              }}
+              className="flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 hover:text-primary"
+            >
+              <LogOut className="size-4" /> Sign out
+            </button>
+          ) : (
+            <Link to="/auth" className="flex items-center gap-3 rounded-2xl px-3 py-2.5 hover:text-primary">
+              <LogIn className="size-4" /> Sign in
+            </Link>
+          )}
         </div>
       </aside>
 
       {/* Main */}
       <main className="flex min-w-0 flex-1 flex-col gap-4">
-        <header className="glass flex items-center justify-between gap-4 rounded-3xl px-4 py-3">
+        <header className="glass glow-ring flex items-center justify-between gap-4 rounded-3xl px-4 py-3">
           <div className="flex items-center gap-3">
-            <span className="font-display text-base font-bold text-gradient lg:hidden">Witz</span>
-            <div className="glass-strong hidden items-center gap-2 rounded-full px-4 py-2 sm:flex">
+            <span className="font-display text-gradient text-glow text-base font-bold lg:hidden">
+              Witz
+            </span>
+            <div className="glass-strong flex items-center gap-2 rounded-full px-4 py-2">
               <Sparkles className="size-4 text-primary" />
               <div className="leading-tight">
                 <p className="label-mono text-muted-foreground">Engine</p>
@@ -144,10 +292,23 @@ function Studio() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <span className="label-mono hidden text-muted-foreground sm:inline">
-              {active.badge}
-            </span>
-            <Settings className="size-4 text-muted-foreground" />
+            <span className="label-mono hidden text-muted-foreground sm:inline">{active.badge}</span>
+            <button
+              onClick={() => setShowKeys(true)}
+              aria-label="Manage your API key"
+              className="glass glow-hover rounded-full p-2 text-muted-foreground hover:text-primary"
+            >
+              <KeyRound className="size-4" />
+            </button>
+            {user ? (
+              <span className="glass hidden rounded-full px-3 py-2 text-xs sm:inline">
+                {user.email}
+              </span>
+            ) : (
+              <Link to="/auth" className="btn-glow rounded-full px-4 py-2 text-xs">
+                Sign in
+              </Link>
+            )}
           </div>
         </header>
 
@@ -159,15 +320,19 @@ function Studio() {
               <button
                 key={m.id}
                 onClick={() => setModel(m.id)}
-                className={`min-w-[190px] flex-1 rounded-3xl p-4 text-left transition-all ${
+                style={{ ["--glow-color" as string]: m.glow }}
+                className={`min-w-[190px] flex-1 rounded-3xl p-4 text-left ${
                   on
-                    ? "glass-strong ring-1 ring-primary/60"
-                    : "glass hover:bg-glass-strong opacity-80 hover:opacity-100"
+                    ? "glass-strong glow-accent animate-witz-breathe"
+                    : "glass glow-hover opacity-80 hover:opacity-100"
                 }`}
               >
                 <div className="flex items-center justify-between">
                   <span className="font-display text-base font-semibold">{m.name}</span>
-                  <span className="label-mono rounded-full bg-primary/10 px-2 py-0.5 text-primary">
+                  <span
+                    className="label-mono rounded-full px-2 py-0.5"
+                    style={{ color: m.glow, background: `color-mix(in oklch, ${m.glow} 16%, transparent)` }}
+                  >
                     {m.badge}
                   </span>
                 </div>
@@ -178,15 +343,15 @@ function Studio() {
         </div>
 
         {/* Conversation */}
-        <section className="glass flex min-h-0 flex-1 flex-col rounded-3xl p-4 md:p-6">
+        <section className="glass glow-ring flex min-h-0 flex-1 flex-col rounded-3xl p-4 md:p-6">
           <div ref={scroller} className="min-h-[38vh] flex-1 space-y-4 overflow-y-auto pr-1">
             {messages.length === 0 && !mutation.isPending && (
               <div className="flex h-full flex-col items-center justify-center py-10 text-center">
-                <h1 className="max-w-xl text-3xl font-bold text-gradient md:text-5xl">
+                <h1 className="text-gradient text-glow max-w-xl text-3xl font-bold md:text-5xl">
                   What are we building today?
                 </h1>
                 <p className="mt-3 max-w-md text-sm text-muted-foreground md:text-base">
-                  Describe your vision and watch the studio bring it to life.
+                  Describe your vision, drop in files, and watch the studio light it up.
                 </p>
                 <div className="mt-8 flex flex-wrap items-center justify-center gap-2">
                   <span className="label-mono text-muted-foreground">Suggested</span>
@@ -194,7 +359,7 @@ function Studio() {
                     <button
                       key={s}
                       onClick={() => send(s)}
-                      className="glass rounded-full px-4 py-2 text-xs text-muted-foreground transition-colors hover:text-primary"
+                      className="glass glow-hover rounded-full px-4 py-2 text-xs text-muted-foreground hover:text-primary"
                     >
                       {s}
                     </button>
@@ -204,17 +369,26 @@ function Studio() {
             )}
 
             {messages.map((m, i) => (
-              <div
-                key={i}
-                className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}
-              >
+              <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
                 <div
                   className={`group relative max-w-[90%] rounded-3xl px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap md:max-w-[80%] ${
                     m.role === "user"
-                      ? "bg-gradient-brand text-primary-foreground font-medium"
+                      ? "bg-gradient-brand text-primary-foreground font-medium shadow-[0_0_28px_oklch(0.85_0.15_195/35%)]"
                       : "glass-strong font-mono text-[0.83rem]"
                   }`}
                 >
+                  {m.attachments && m.attachments.length > 0 && (
+                    <div className="mb-2 flex flex-wrap gap-1">
+                      {m.attachments.map((a) => (
+                        <span
+                          key={a}
+                          className="label-mono rounded-full bg-black/25 px-2 py-0.5 text-[0.62rem]"
+                        >
+                          {a}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                   {m.content}
                   {m.role === "assistant" && (
                     <button
@@ -230,7 +404,7 @@ function Studio() {
             ))}
 
             {mutation.isPending && (
-              <div className="glass-strong inline-flex items-center gap-2 rounded-full px-4 py-2 text-xs text-primary">
+              <div className="glass-strong animate-witz-breathe inline-flex items-center gap-2 rounded-full px-4 py-2 text-xs text-primary">
                 <Loader2 className="size-3.5 animate-spin" />
                 <span className="label-mono animate-witz-pulse">{active.name} thinking</span>
               </div>
@@ -245,10 +419,28 @@ function Studio() {
 
           {artifact && <ArtifactPanel artifact={artifact} />}
 
-
-
           {/* Composer */}
-          <div className="glass-strong mt-4 rounded-3xl p-3">
+          <div className="glass-strong glow-ring mt-4 rounded-3xl p-3">
+            {attachments.length > 0 && (
+              <div className="mb-2 flex flex-wrap gap-2">
+                {attachments.map((a) => (
+                  <span
+                    key={a.name}
+                    className="glass flex items-center gap-2 rounded-full px-3 py-1 text-xs text-primary"
+                  >
+                    <Paperclip className="size-3" />
+                    {a.name}
+                    <button
+                      aria-label={`Remove ${a.name}`}
+                      onClick={() => setAttachments((x) => x.filter((f) => f.name !== a.name))}
+                      className="hover:text-destructive"
+                    >
+                      <X className="size-3" />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
             <textarea
               value={input}
               onChange={(e) => setInput(e.target.value)}
@@ -263,13 +455,32 @@ function Studio() {
               className="w-full resize-none bg-transparent px-2 py-1 text-sm outline-none placeholder:text-muted-foreground"
             />
             <div className="mt-2 flex items-center justify-between gap-3 border-t border-border pt-3">
-              <span className="label-mono text-muted-foreground">
-                {active.name} · ready
-              </span>
+              <div className="flex items-center gap-2">
+                <input
+                  ref={fileInput}
+                  type="file"
+                  multiple
+                  className="hidden"
+                  onChange={(e) => {
+                    onFiles(e.target.files);
+                    e.target.value = "";
+                  }}
+                />
+                <button
+                  onClick={() => fileInput.current?.click()}
+                  aria-label="Attach files"
+                  className="glass glow-hover rounded-full p-2 text-muted-foreground hover:text-primary"
+                >
+                  <Paperclip className="size-4" />
+                </button>
+                <span className="label-mono text-muted-foreground">
+                  {active.name} · {user ? "saving" : "not saved"}
+                </span>
+              </div>
               <button
                 onClick={() => send(input)}
-                disabled={mutation.isPending || !input.trim()}
-                className="inline-flex items-center gap-2 rounded-full bg-gradient-brand px-5 py-2.5 text-sm font-semibold text-primary-foreground transition-transform hover:scale-[1.03] disabled:opacity-40 disabled:hover:scale-100"
+                disabled={mutation.isPending || (!input.trim() && attachments.length === 0)}
+                className="btn-glow rounded-full px-5 py-2.5 text-sm disabled:opacity-40"
               >
                 Generate <ArrowUp className="size-4" />
               </button>
@@ -277,6 +488,8 @@ function Studio() {
           </div>
         </section>
       </main>
+
+      {showKeys && <ApiKeyDialog onClose={() => setShowKeys(false)} />}
     </div>
   );
 }
