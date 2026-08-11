@@ -260,6 +260,14 @@ function Studio() {
           <div className="flex items-center gap-3 rounded-2xl px-3 py-2.5">
             <Layers className="size-4" /> {STUDIO_MODELS.length} engines
           </div>
+          <a
+            href="https://cortex-ai-builder.lovable.app"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="btn-glow flex w-full items-center gap-3 rounded-full px-3 py-2.5 text-center text-sm"
+          >
+            <Sparkles className="size-4" /> Make your own AI
+          </a>
           {user ? (
             <button
               onClick={() => {
