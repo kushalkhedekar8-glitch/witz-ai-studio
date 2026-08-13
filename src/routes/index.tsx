@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   ArrowUp,
   Copy,
+  Cpu,
   KeyRound,
   Layers,
   LogIn,
@@ -303,6 +304,24 @@ function Studio() {
           </div>
           <div className="flex items-center gap-2">
             <span className="label-mono hidden text-muted-foreground sm:inline">{active.badge}</span>
+            <a
+              href="https://cortex-ai-builder.lovable.app"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="glass glow-hover flex items-center gap-2 rounded-full px-3 py-2 text-xs text-muted-foreground hover:text-primary"
+            >
+              <Sparkles className="size-4" />
+              <span className="hidden sm:inline">Make your own AI</span>
+            </a>
+            <a
+              href="https://cortex-slm.lovable.app"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="glass glow-hover flex items-center gap-2 rounded-full px-3 py-2 text-xs text-muted-foreground hover:text-primary"
+            >
+              <Cpu className="size-4" />
+              <span className="hidden sm:inline">Local LLM</span>
+            </a>
             <button
               onClick={() => setShowKeys(true)}
               aria-label="Manage your API key"
