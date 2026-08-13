@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   ArrowUp,
   Copy,
+  Cpu,
   KeyRound,
   Layers,
   LogIn,
