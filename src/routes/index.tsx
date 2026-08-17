@@ -369,7 +369,48 @@ function Studio() {
           </div>
         </header>
 
+        {/* Choose model per kind of work */}
+        <div className="glass glow-ring rounded-3xl px-4 py-3">
+          <button
+            onClick={() => setShowPicker((v) => !v)}
+            className="flex w-full items-center justify-between gap-3 text-left"
+          >
+            <span className="flex items-center gap-2 text-sm font-medium">
+              <Layers className="size-4 text-primary" /> Choose model per task
+            </span>
+            <span className="label-mono text-muted-foreground">
+              {showPicker ? "hide" : "image · video · voice"}
+            </span>
+          </button>
+          {showPicker && (
+            <div className="mt-3 grid gap-3 sm:grid-cols-3">
+              {(["image", "video", "voice"] as const).map((kind) => (
+                <div key={kind} className="glass-strong rounded-2xl p-3">
+                  <p className="label-mono text-muted-foreground">{TASK_MODELS[kind].label}</p>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {TASK_MODELS[kind].options.map((o) => (
+                      <button
+                        key={o.id}
+                        onClick={() => setTaskModels((t) => ({ ...t, [kind]: o.id }))}
+                        title={o.tagline}
+                        className={`rounded-full px-3 py-1.5 text-xs transition-colors ${
+                          taskModels[kind] === o.id
+                            ? "btn-glow"
+                            : "glass text-muted-foreground hover:text-primary"
+                        }`}
+                      >
+                        {o.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
         {/* Engine picker */}
+
         <div className="flex gap-3 overflow-x-auto pb-1">
           {STUDIO_MODELS.map((m) => {
             const on = m.id === model;
