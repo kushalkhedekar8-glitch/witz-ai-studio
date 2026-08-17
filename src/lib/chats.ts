@@ -4,7 +4,10 @@ export type ChatMsg = {
   role: "user" | "assistant";
   content: string;
   attachments?: string[];
+  /** Media produced by a specialist engine (not persisted). */
+  media?: { kind: "image" | "video" | "audio"; url: string };
 };
+
 
 export type Conversation = {
   id: string;

@@ -21,12 +21,13 @@ import {
   Image as ImageIcon,
 } from "lucide-react";
 import { STUDIO_MODELS, DEFAULT_MODEL } from "@/lib/models";
-import { runStudio } from "@/lib/studio.functions";
+import { TASK_MODELS, DEFAULT_TASK_MODELS, type TaskModelChoice } from "@/lib/tasks";
 import { extractArtifact } from "@/lib/artifact";
 import { ArtifactPanel } from "@/components/ArtifactPanel";
 import { ProjectWorkspace } from "@/components/ProjectWorkspace";
-import { buildWithTeam } from "@/lib/studio.functions";
+import { runTask } from "@/lib/studio.functions";
 import type { BuildResult } from "@/lib/project";
+
 import { ApiKeyDialog } from "@/components/ApiKeyDialog";
 import { loadByok } from "@/lib/byok";
 import { useAuth } from "@/hooks/useAuth";
@@ -85,11 +86,13 @@ function Studio() {
   const [error, setError] = useState<string | null>(null);
   const scroller = useRef<HTMLDivElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
-  const call = useServerFn(runStudio);
-  const buildCall = useServerFn(buildWithTeam);
+  const taskCall = useServerFn(runTask);
   const [teamMode, setTeamMode] = useState(true);
   const [withMockup, setWithMockup] = useState(true);
   const [project, setProject] = useState<BuildResult | null>(null);
+  const [taskModels, setTaskModels] = useState<TaskModelChoice>(DEFAULT_TASK_MODELS);
+  const [showPicker, setShowPicker] = useState(false);
+
 
   const history = useQuery({
     queryKey: ["conversations", user?.id],
@@ -109,52 +112,44 @@ function Studio() {
     return id;
   };
 
-  const mutation = useMutation({
-    mutationFn: async ({ history: h, convo }: { history: ChatMsg[]; convo: string | null }) => {
-      const byok = model === "custom" ? (loadByok() ?? undefined) : undefined;
+  const task = useMutation({
+    mutationFn: async ({ brief, convo }: { brief: string; convo: string | null }) => {
+      const byok = loadByok() ?? undefined;
       if (model === "custom" && !byok) {
         throw new Error("Add your own API key first (key icon in the header).");
       }
-      const res = await call({
-        data: {
-          model,
-          byok,
-          messages: h.map((m) => ({ role: m.role, content: m.content })),
-        },
-      });
-      if (res.error) throw new Error(res.error);
-      return { text: res.text || "(no output)", convo };
-    },
-    onSuccess: async ({ text, convo }) => {
-      setMessages((m) => [...m, { role: "assistant", content: text }]);
-      await persist({ role: "assistant", content: text }, convo);
-    },
-
-    onError: (e: Error) => setError(e.message),
-  });
-
-  const build = useMutation({
-    mutationFn: async ({ brief, convo }: { brief: string; convo: string | null }) => {
-      const byok = loadByok() ?? undefined;
-      const res = await buildCall({
-        data: { brief, engine: model, byok, team: teamMode, withMockup },
+      const res = await taskCall({
+        data: { brief, engine: model, byok, team: teamMode, withMockup, taskModels },
       });
       if (res.error) throw new Error(res.error);
       return { res, convo };
     },
     onSuccess: async ({ res, convo }) => {
-      setProject(res);
-      const summary =
-        (res.plan ? `${res.plan}\n\n` : "") +
-        `Build complete — ${res.files.length} files ready in the workspace:\n` +
-        res.steps.map((s) => `• ${s.agent} — ${s.role} (${s.status})`).join("\n");
-      setMessages((m) => [...m, { role: "assistant", content: summary }]);
+      let summary = "";
+      if (res.project) {
+        setProject(res.project);
+        summary =
+          (res.project.plan ? `${res.project.plan}\n\n` : "") +
+          `Build complete — ${res.project.files.length} files ready in the workspace:\n` +
+          res.project.steps.map((s) => `• ${s.agent} — ${s.role} (${s.status})`).join("\n");
+      } else if (res.media) {
+        summary = `${res.reason}${res.note ? `\n${res.note}` : ""}`;
+      } else {
+        summary = res.text || "(no output)";
+      }
+      const msg: ChatMsg = {
+        role: "assistant",
+        content: summary,
+        ...(res.media ? { media: res.media } : {}),
+      };
+      setMessages((m) => [...m, msg]);
       await persist({ role: "assistant", content: summary }, convo);
     },
     onError: (e: Error) => setError(e.message),
   });
 
-  const busy = mutation.isPending || build.isPending;
+  const busy = task.isPending;
+
 
   useEffect(() => {
     scroller.current?.scrollTo({ top: scroller.current.scrollHeight, behavior: "smooth" });
@@ -185,8 +180,7 @@ function Studio() {
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not save this message.");
     }
-    if (teamMode) build.mutate({ brief: userMsg.content, convo });
-    else mutation.mutate({ history: next, convo });
+    task.mutate({ brief: userMsg.content, convo });
   };
 
   const onFiles = async (files: FileList | null) => {
@@ -375,7 +369,48 @@ function Studio() {
           </div>
         </header>
 
+        {/* Choose model per kind of work */}
+        <div className="glass glow-ring rounded-3xl px-4 py-3">
+          <button
+            onClick={() => setShowPicker((v) => !v)}
+            className="flex w-full items-center justify-between gap-3 text-left"
+          >
+            <span className="flex items-center gap-2 text-sm font-medium">
+              <Layers className="size-4 text-primary" /> Choose model per task
+            </span>
+            <span className="label-mono text-muted-foreground">
+              {showPicker ? "hide" : "image · video · voice"}
+            </span>
+          </button>
+          {showPicker && (
+            <div className="mt-3 grid gap-3 sm:grid-cols-3">
+              {(["image", "video", "voice"] as const).map((kind) => (
+                <div key={kind} className="glass-strong rounded-2xl p-3">
+                  <p className="label-mono text-muted-foreground">{TASK_MODELS[kind].label}</p>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {TASK_MODELS[kind].options.map((o) => (
+                      <button
+                        key={o.id}
+                        onClick={() => setTaskModels((t) => ({ ...t, [kind]: o.id }))}
+                        title={o.tagline}
+                        className={`rounded-full px-3 py-1.5 text-xs transition-colors ${
+                          taskModels[kind] === o.id
+                            ? "btn-glow"
+                            : "glass text-muted-foreground hover:text-primary"
+                        }`}
+                      >
+                        {o.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
         {/* Engine picker */}
+
         <div className="flex gap-3 overflow-x-auto pb-1">
           {STUDIO_MODELS.map((m) => {
             const on = m.id === model;
@@ -453,6 +488,30 @@ function Studio() {
                     </div>
                   )}
                   {m.content}
+                  {m.media?.kind === "image" && (
+                    <img
+                      src={m.media.url}
+                      alt="Generated or sourced visual"
+                      loading="lazy"
+                      className="glow-ring mt-3 w-full rounded-2xl"
+                    />
+                  )}
+                  {m.media?.kind === "video" && (
+                    <video src={m.media.url} controls className="glow-ring mt-3 w-full rounded-2xl" />
+                  )}
+                  {m.media?.kind === "audio" && (
+                    <audio src={m.media.url} controls className="mt-3 w-full" />
+                  )}
+                  {m.media && (
+                    <a
+                      href={m.media.url}
+                      download
+                      className="glass glow-hover mt-2 inline-flex rounded-full px-3 py-1 text-[0.7rem] text-primary"
+                    >
+                      Download
+                    </a>
+                  )}
+
                   {m.role === "assistant" && (
                     <button
                       onClick={() => navigator.clipboard.writeText(m.content)}
@@ -470,7 +529,7 @@ function Studio() {
               <div className="glass-strong animate-witz-breathe inline-flex items-center gap-2 rounded-full px-4 py-2 text-xs text-primary">
                 <Loader2 className="size-3.5 animate-spin" />
                 <span className="label-mono animate-witz-pulse">
-                  {build.isPending ? "AI team building your project" : `${active.name} thinking`}
+                  {"Organizer routing your request to the right engine"}
                 </span>
               </div>
             )}
