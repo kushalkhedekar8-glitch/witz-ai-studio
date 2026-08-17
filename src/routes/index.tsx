@@ -21,12 +21,13 @@ import {
   Image as ImageIcon,
 } from "lucide-react";
 import { STUDIO_MODELS, DEFAULT_MODEL } from "@/lib/models";
-import { runStudio } from "@/lib/studio.functions";
+import { TASK_MODELS, DEFAULT_TASK_MODELS, type TaskModelChoice } from "@/lib/tasks";
 import { extractArtifact } from "@/lib/artifact";
 import { ArtifactPanel } from "@/components/ArtifactPanel";
 import { ProjectWorkspace } from "@/components/ProjectWorkspace";
-import { buildWithTeam } from "@/lib/studio.functions";
+import { runTask } from "@/lib/studio.functions";
 import type { BuildResult } from "@/lib/project";
+
 import { ApiKeyDialog } from "@/components/ApiKeyDialog";
 import { loadByok } from "@/lib/byok";
 import { useAuth } from "@/hooks/useAuth";
