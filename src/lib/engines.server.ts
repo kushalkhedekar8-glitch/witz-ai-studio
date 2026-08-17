@@ -198,8 +198,13 @@ export async function buildProject(opts: {
   byok?: Byok | undefined;
   team: boolean;
   withMockup: boolean;
+  images?: string[];
 }): Promise<BuildResult> {
   const { brief, engine, byok, team, withMockup } = opts;
+  const images = opts.images ?? [];
+  const imageNote = images.length
+    ? `\n\nUse these real image URLs (already sourced from the internet) in <img> tags where imagery fits:\n${images.join("\n")}`
+    : "";
   const steps: BuildStep[] = [];
 
   if (!team) {
@@ -246,7 +251,7 @@ export async function buildProject(opts: {
       byok,
       "You are the Markup agent. Output ONLY the semantic HTML for inside <body> (no <html>, <head>, <style> or <script>). " +
         "Link nothing; other agents own styles.css and script.js. Use clear class names and data hooks.",
-      `Build brief:\n${plan}\n\nOriginal request: ${brief}`,
+      `Build brief:\n${plan}\n\nOriginal request: ${brief}${imageNote}`,
     ),
     agent(
       engine,
