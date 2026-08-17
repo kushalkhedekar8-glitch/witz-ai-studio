@@ -2,7 +2,7 @@
 
 export type ChatMessage = { role: "user" | "assistant" | "system"; content: string };
 
-export type Byok = { apiKey: string; model: string; baseUrl?: string };
+export type Byok = { apiKey: string; model: string; baseUrl?: string | undefined };
 
 type Route = { url: string; key: string; model: string };
 
@@ -213,10 +213,10 @@ export async function buildProject(opts: {
     if (solo.error) return { plan: "", files: [], steps, error: solo.error };
     const blocks = [...solo.text.matchAll(/```([a-zA-Z]*)\n([\s\S]*?)```/g)];
     const pick = (lang: string) =>
-      blocks.find((b) => b[1]?.toLowerCase().startsWith(lang))?.[2]?.trim() ?? "";
+      blocks.find((b) => (b[1] ?? "").toLowerCase().startsWith(lang))?.[2]?.trim() ?? "";
     steps.push({ agent: "Solo build", role: "markup + styles + behaviour", status: "done" });
     return {
-      plan: solo.text.split("```")[0]?.trim() ?? "",
+      plan: (solo.text.split("```")[0] ?? "").trim(),
       steps,
       files: [
         { path: "index.html", code: pick("htm") || solo.text },
