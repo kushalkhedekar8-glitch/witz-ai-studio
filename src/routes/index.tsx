@@ -86,11 +86,13 @@ function Studio() {
   const [error, setError] = useState<string | null>(null);
   const scroller = useRef<HTMLDivElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
-  const call = useServerFn(runStudio);
-  const buildCall = useServerFn(buildWithTeam);
+  const taskCall = useServerFn(runTask);
   const [teamMode, setTeamMode] = useState(true);
   const [withMockup, setWithMockup] = useState(true);
   const [project, setProject] = useState<BuildResult | null>(null);
+  const [taskModels, setTaskModels] = useState<TaskModelChoice>(DEFAULT_TASK_MODELS);
+  const [showPicker, setShowPicker] = useState(false);
+
 
   const history = useQuery({
     queryKey: ["conversations", user?.id],
