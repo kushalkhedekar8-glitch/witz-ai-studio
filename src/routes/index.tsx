@@ -112,52 +112,44 @@ function Studio() {
     return id;
   };
 
-  const mutation = useMutation({
-    mutationFn: async ({ history: h, convo }: { history: ChatMsg[]; convo: string | null }) => {
-      const byok = model === "custom" ? (loadByok() ?? undefined) : undefined;
+  const task = useMutation({
+    mutationFn: async ({ brief, convo }: { brief: string; convo: string | null }) => {
+      const byok = loadByok() ?? undefined;
       if (model === "custom" && !byok) {
         throw new Error("Add your own API key first (key icon in the header).");
       }
-      const res = await call({
-        data: {
-          model,
-          byok,
-          messages: h.map((m) => ({ role: m.role, content: m.content })),
-        },
-      });
-      if (res.error) throw new Error(res.error);
-      return { text: res.text || "(no output)", convo };
-    },
-    onSuccess: async ({ text, convo }) => {
-      setMessages((m) => [...m, { role: "assistant", content: text }]);
-      await persist({ role: "assistant", content: text }, convo);
-    },
-
-    onError: (e: Error) => setError(e.message),
-  });
-
-  const build = useMutation({
-    mutationFn: async ({ brief, convo }: { brief: string; convo: string | null }) => {
-      const byok = loadByok() ?? undefined;
-      const res = await buildCall({
-        data: { brief, engine: model, byok, team: teamMode, withMockup },
+      const res = await taskCall({
+        data: { brief, engine: model, byok, team: teamMode, withMockup, taskModels },
       });
       if (res.error) throw new Error(res.error);
       return { res, convo };
     },
     onSuccess: async ({ res, convo }) => {
-      setProject(res);
-      const summary =
-        (res.plan ? `${res.plan}\n\n` : "") +
-        `Build complete — ${res.files.length} files ready in the workspace:\n` +
-        res.steps.map((s) => `• ${s.agent} — ${s.role} (${s.status})`).join("\n");
-      setMessages((m) => [...m, { role: "assistant", content: summary }]);
+      let summary = "";
+      if (res.project) {
+        setProject(res.project);
+        summary =
+          (res.project.plan ? `${res.project.plan}\n\n` : "") +
+          `Build complete — ${res.project.files.length} files ready in the workspace:\n` +
+          res.project.steps.map((s) => `• ${s.agent} — ${s.role} (${s.status})`).join("\n");
+      } else if (res.media) {
+        summary = `${res.reason}${res.note ? `\n${res.note}` : ""}`;
+      } else {
+        summary = res.text || "(no output)";
+      }
+      const msg: ChatMsg = {
+        role: "assistant",
+        content: summary,
+        ...(res.media ? { media: res.media } : {}),
+      };
+      setMessages((m) => [...m, msg]);
       await persist({ role: "assistant", content: summary }, convo);
     },
     onError: (e: Error) => setError(e.message),
   });
 
-  const busy = mutation.isPending || build.isPending;
+  const busy = task.isPending;
+
 
   useEffect(() => {
     scroller.current?.scrollTo({ top: scroller.current.scrollHeight, behavior: "smooth" });
