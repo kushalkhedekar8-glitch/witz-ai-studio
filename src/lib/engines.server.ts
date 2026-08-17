@@ -88,7 +88,7 @@ export type ChatResult = { text: string; error?: string };
 export async function chat(
   engine: string,
   messages: ChatMessage[],
-  byok?: Byok,
+  byok?: Byok | undefined,
 ): Promise<ChatResult> {
   const routes = chain(engine, byok);
   if (routes.length === 0)
@@ -147,7 +147,7 @@ export type BuildResult = {
 
 function fenced(text: string) {
   const m = text.match(/```[a-zA-Z]*\n([\s\S]*?)```/);
-  return (m ? m[1] : text).trim();
+  return ((m ? m[1] : text) ?? text).trim();
 }
 
 async function agent(
@@ -195,7 +195,7 @@ async function designMockup(brief: string): Promise<string | undefined> {
 export async function buildProject(opts: {
   brief: string;
   engine: string;
-  byok?: Byok;
+  byok?: Byok | undefined;
   team: boolean;
   withMockup: boolean;
 }): Promise<BuildResult> {
