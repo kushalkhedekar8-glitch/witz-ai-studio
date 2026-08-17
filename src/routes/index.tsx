@@ -447,6 +447,30 @@ function Studio() {
                     </div>
                   )}
                   {m.content}
+                  {m.media?.kind === "image" && (
+                    <img
+                      src={m.media.url}
+                      alt="Generated or sourced visual"
+                      loading="lazy"
+                      className="glow-ring mt-3 w-full rounded-2xl"
+                    />
+                  )}
+                  {m.media?.kind === "video" && (
+                    <video src={m.media.url} controls className="glow-ring mt-3 w-full rounded-2xl" />
+                  )}
+                  {m.media?.kind === "audio" && (
+                    <audio src={m.media.url} controls className="mt-3 w-full" />
+                  )}
+                  {m.media && (
+                    <a
+                      href={m.media.url}
+                      download
+                      className="glass glow-hover mt-2 inline-flex rounded-full px-3 py-1 text-[0.7rem] text-primary"
+                    >
+                      Download
+                    </a>
+                  )}
+
                   {m.role === "assistant" && (
                     <button
                       onClick={() => navigator.clipboard.writeText(m.content)}
