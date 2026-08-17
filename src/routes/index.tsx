@@ -17,11 +17,16 @@ import {
   Trash2,
   X,
   Loader2,
+  Users,
+  Image as ImageIcon,
 } from "lucide-react";
 import { STUDIO_MODELS, DEFAULT_MODEL } from "@/lib/models";
 import { runStudio } from "@/lib/studio.functions";
 import { extractArtifact } from "@/lib/artifact";
 import { ArtifactPanel } from "@/components/ArtifactPanel";
+import { ProjectWorkspace } from "@/components/ProjectWorkspace";
+import { buildWithTeam } from "@/lib/studio.functions";
+import type { BuildResult } from "@/lib/project";
 import { ApiKeyDialog } from "@/components/ApiKeyDialog";
 import { loadByok } from "@/lib/byok";
 import { useAuth } from "@/hooks/useAuth";
@@ -81,6 +86,10 @@ function Studio() {
   const scroller = useRef<HTMLDivElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const call = useServerFn(runStudio);
+  const buildCall = useServerFn(buildWithTeam);
+  const [teamMode, setTeamMode] = useState(true);
+  const [withMockup, setWithMockup] = useState(true);
+  const [project, setProject] = useState<BuildResult | null>(null);
 
   const history = useQuery({
     queryKey: ["conversations", user?.id],
@@ -124,13 +133,36 @@ function Studio() {
     onError: (e: Error) => setError(e.message),
   });
 
+  const build = useMutation({
+    mutationFn: async ({ brief, convo }: { brief: string; convo: string | null }) => {
+      const byok = loadByok() ?? undefined;
+      const res = await buildCall({
+        data: { brief, engine: model, byok, team: teamMode, withMockup },
+      });
+      if (res.error) throw new Error(res.error);
+      return { res, convo };
+    },
+    onSuccess: async ({ res, convo }) => {
+      setProject(res);
+      const summary =
+        (res.plan ? `${res.plan}\n\n` : "") +
+        `Build complete — ${res.files.length} files ready in the workspace:\n` +
+        res.steps.map((s) => `• ${s.agent} — ${s.role} (${s.status})`).join("\n");
+      setMessages((m) => [...m, { role: "assistant", content: summary }]);
+      await persist({ role: "assistant", content: summary }, convo);
+    },
+    onError: (e: Error) => setError(e.message),
+  });
+
+  const busy = mutation.isPending || build.isPending;
+
   useEffect(() => {
     scroller.current?.scrollTo({ top: scroller.current.scrollHeight, behavior: "smooth" });
-  }, [messages, mutation.isPending]);
+  }, [messages, busy]);
 
   const send = async (text: string) => {
     const value = text.trim();
-    if ((!value && attachments.length === 0) || mutation.isPending) return;
+    if ((!value && attachments.length === 0) || busy) return;
     setError(null);
 
     const attachBlock = attachments
@@ -153,7 +185,8 @@ function Studio() {
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not save this message.");
     }
-    mutation.mutate({ history: next, convo });
+    if (teamMode) build.mutate({ brief: userMsg.content, convo });
+    else mutation.mutate({ history: next, convo });
   };
 
   const onFiles = async (files: FileList | null) => {
@@ -184,6 +217,7 @@ function Studio() {
   };
 
   const newSession = () => {
+    setProject(null);
     setMessages([]);
     setConversationId(null);
     setAttachments([]);
@@ -374,7 +408,7 @@ function Studio() {
         {/* Conversation */}
         <section className="glass glow-ring flex min-h-0 flex-1 flex-col rounded-3xl p-4 md:p-6">
           <div ref={scroller} className="min-h-[38vh] flex-1 space-y-4 overflow-y-auto pr-1">
-            {messages.length === 0 && !mutation.isPending && (
+            {messages.length === 0 && !busy && (
               <div className="flex h-full flex-col items-center justify-center py-10 text-center">
                 <h1 className="text-gradient text-glow max-w-xl text-3xl font-bold md:text-5xl">
                   What are we building today?
@@ -432,10 +466,12 @@ function Studio() {
               </div>
             ))}
 
-            {mutation.isPending && (
+            {busy && (
               <div className="glass-strong animate-witz-breathe inline-flex items-center gap-2 rounded-full px-4 py-2 text-xs text-primary">
                 <Loader2 className="size-3.5 animate-spin" />
-                <span className="label-mono animate-witz-pulse">{active.name} thinking</span>
+                <span className="label-mono animate-witz-pulse">
+                  {build.isPending ? "AI team building your project" : `${active.name} thinking`}
+                </span>
               </div>
             )}
 
@@ -446,7 +482,16 @@ function Studio() {
             )}
           </div>
 
-          {artifact && <ArtifactPanel artifact={artifact} />}
+          {project ? (
+            <ProjectWorkspace
+              files={project.files}
+              steps={project.steps}
+              plan={project.plan}
+              {...(project.mockup ? { mockup: project.mockup } : {})}
+            />
+          ) : (
+            artifact && <ArtifactPanel artifact={artifact} />
+          )}
 
           {/* Composer */}
           <div className="glass-strong glow-ring mt-4 rounded-3xl p-3">
@@ -502,16 +547,35 @@ function Studio() {
                 >
                   <Paperclip className="size-4" />
                 </button>
-                <span className="label-mono text-muted-foreground">
+                <button
+                  onClick={() => setTeamMode((v) => !v)}
+                  className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs transition-colors ${
+                    teamMode ? "btn-glow" : "glass text-muted-foreground hover:text-primary"
+                  }`}
+                >
+                  <Users className="size-3.5" /> AI team
+                </button>
+                <button
+                  onClick={() => setWithMockup((v) => !v)}
+                  disabled={!teamMode}
+                  className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs transition-colors disabled:opacity-40 ${
+                    withMockup && teamMode
+                      ? "glass text-primary"
+                      : "glass text-muted-foreground hover:text-primary"
+                  }`}
+                >
+                  <ImageIcon className="size-3.5" /> Design agent
+                </button>
+                <span className="label-mono hidden text-muted-foreground lg:inline">
                   {active.name} · {user ? "saving" : "not saved"}
                 </span>
               </div>
               <button
                 onClick={() => send(input)}
-                disabled={mutation.isPending || (!input.trim() && attachments.length === 0)}
+                disabled={busy || (!input.trim() && attachments.length === 0)}
                 className="btn-glow rounded-full px-5 py-2.5 text-sm disabled:opacity-40"
               >
-                Generate <ArrowUp className="size-4" />
+                {teamMode ? "Build" : "Generate"} <ArrowUp className="size-4" />
               </button>
             </div>
           </div>
