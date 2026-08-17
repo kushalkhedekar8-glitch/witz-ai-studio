@@ -25,6 +25,10 @@ const buildSchema = z.object({
   withMockup: z.boolean(),
 });
 
+const taskSchema = buildSchema.extend({
+  taskModels: z.object({ image: z.string(), video: z.string(), voice: z.string() }),
+});
+
 export const runStudio = createServerFn({ method: "POST" })
   .inputValidator((data: unknown) => chatSchema.parse(data))
   .handler(async ({ data }): Promise<{ text: string; error?: string }> => {
@@ -41,4 +45,12 @@ export const buildWithTeam = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const { buildProject } = await import("./engines.server");
     return buildProject(data);
+  });
+
+/** Organizer-led entry point: one prompt in, the right specialist out. */
+export const runTask = createServerFn({ method: "POST" })
+  .inputValidator((data: unknown) => taskSchema.parse(data))
+  .handler(async ({ data }) => {
+    const { runOrganizedTask } = await import("./orchestrator.server");
+    return runOrganizedTask(data);
   });
