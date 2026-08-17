@@ -436,7 +436,7 @@ function Studio() {
                 <div
                   className={`group relative max-w-[90%] rounded-3xl px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap md:max-w-[80%] ${
                     m.role === "user"
-                      ? "bg-gradient-brand text-primary-foreground font-medium shadow-[0_0_28px_oklch(0.85_0.15_195/35%)]"
+                      ? "bg-gradient-brand text-primary-foreground font-medium shadow-[0_0_28px_oklch(0.72_0.19_265/35%)]"
                       : "glass-strong font-mono text-[0.83rem]"
                   }`}
                 >
