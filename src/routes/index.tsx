@@ -180,8 +180,7 @@ function Studio() {
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not save this message.");
     }
-    if (teamMode) build.mutate({ brief: userMsg.content, convo });
-    else mutation.mutate({ history: next, convo });
+    task.mutate({ brief: userMsg.content, convo });
   };
 
   const onFiles = async (files: FileList | null) => {
@@ -465,7 +464,7 @@ function Studio() {
               <div className="glass-strong animate-witz-breathe inline-flex items-center gap-2 rounded-full px-4 py-2 text-xs text-primary">
                 <Loader2 className="size-3.5 animate-spin" />
                 <span className="label-mono animate-witz-pulse">
-                  {build.isPending ? "AI team building your project" : `${active.name} thinking`}
+                  {"Organizer routing your request to the right engine"}
                 </span>
               </div>
             )}
