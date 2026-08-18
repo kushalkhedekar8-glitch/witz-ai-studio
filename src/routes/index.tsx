@@ -625,8 +625,37 @@ function Studio() {
                 >
                   <ImageIcon className="size-3.5" /> Design agent
                 </button>
-                <span className="label-mono hidden text-muted-foreground lg:inline">
-                  {active.name} · {user ? "saving" : "not saved"}
+                <select
+                  aria-label="Choose engine"
+                  value={model}
+                  onChange={(e) => setModel(e.target.value)}
+                  className="glass rounded-full px-3 py-1.5 text-xs text-primary outline-none"
+                >
+                  {STUDIO_MODELS.map((m) => (
+                    <option key={m.id} value={m.id} className="bg-card text-foreground">
+                      {m.name}
+                    </option>
+                  ))}
+                </select>
+                {(["image", "video", "voice"] as const).map((kind) => (
+                  <select
+                    key={kind}
+                    aria-label={`Choose ${kind} model`}
+                    value={taskModels[kind]}
+                    onChange={(e) =>
+                      setTaskModels((t) => ({ ...t, [kind]: e.target.value }))
+                    }
+                    className="glass hidden rounded-full px-3 py-1.5 text-xs text-muted-foreground outline-none sm:block"
+                  >
+                    {TASK_MODELS[kind].options.map((o) => (
+                      <option key={o.id} value={o.id} className="bg-card text-foreground">
+                        {TASK_MODELS[kind].label}: {o.name}
+                      </option>
+                    ))}
+                  </select>
+                ))}
+                <span className="label-mono hidden text-muted-foreground xl:inline">
+                  {user ? "saving" : "not saved"}
                 </span>
               </div>
               <button

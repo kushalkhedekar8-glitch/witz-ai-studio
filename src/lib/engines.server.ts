@@ -18,14 +18,30 @@ function byokRoute(byok?: Byok): Route | null {
   return { url: `${base}/chat/completions`, key: byok.apiKey, model: byok.model };
 }
 
-/** Ordered attempt chain per engine: primary provider, then user key, then built-in AI. */
+const GROQ = (): Route => ({
+  url: "https://api.groq.com/openai/v1/chat/completions",
+  key: process.env["GROQ_API_KEY"] ?? "",
+  model: "llama-3.3-70b-versatile",
+});
+const OPENAI = (): Route => ({
+  url: "https://api.openai.com/v1/chat/completions",
+  key: process.env["OPENAI_API_KEY"] ?? "",
+  model: "gpt-4o-mini",
+});
+const GEMINI = (): Route => ({
+  url: "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+  key: process.env["GOOGLE_API_KEY"] ?? "",
+  model: "gemini-2.0-flash",
+});
+const ROUTER = (model: string): Route => ({
+  url: "https://openrouter.ai/api/v1/chat/completions",
+  key: process.env["OPENROUTER_API_KEY"] ?? "",
+  model,
+});
+
+/** Ordered attempt chain per engine: chosen provider, user key, then every other lane. */
 function chain(engine: string, byok?: Byok): Route[] {
   const user = byokRoute(byok);
-  const openrouter = (model: string): Route => ({
-    url: "https://openrouter.ai/api/v1/chat/completions",
-    key: process.env["OPENROUTER_API_KEY"] ?? "",
-    model,
-  });
 
   let primary: Route | null = null;
   switch (engine) {
@@ -33,28 +49,16 @@ function chain(engine: string, byok?: Byok): Route[] {
       primary = LOVABLE();
       break;
     case "nova":
-      primary = {
-        url: "https://api.groq.com/openai/v1/chat/completions",
-        key: process.env["GROQ_API_KEY"] ?? "",
-        model: "llama-3.3-70b-versatile",
-      };
+      primary = GROQ();
       break;
     case "quartz":
-      primary = {
-        url: "https://api.openai.com/v1/chat/completions",
-        key: process.env["OPENAI_API_KEY"] ?? "",
-        model: "gpt-4o-mini",
-      };
+      primary = OPENAI();
       break;
     case "prism":
-      primary = {
-        url: "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
-        key: process.env["GOOGLE_API_KEY"] ?? "",
-        model: "gemini-2.0-flash",
-      };
+      primary = GEMINI();
       break;
     case "atlas":
-      primary = openrouter("anthropic/claude-3.5-sonnet");
+      primary = ROUTER("anthropic/claude-3.5-sonnet");
       break;
     case "custom":
       primary = user;
@@ -63,9 +67,15 @@ function chain(engine: string, byok?: Byok): Route[] {
       primary = LOVABLE();
   }
 
-  const routes = [primary, user, LOVABLE()].filter(
-    (r): r is Route => !!r && !!r.key && !!r.model,
-  );
+  const routes = [
+    primary,
+    user,
+    OPENAI(),
+    GROQ(),
+    GEMINI(),
+    ROUTER("meta-llama/llama-3.3-70b-instruct"),
+    LOVABLE(),
+  ].filter((r): r is Route => !!r && !!r.key && !!r.model);
   // de-dupe identical routes
   return routes.filter(
     (r, i) => routes.findIndex((o) => o.url === r.url && o.model === r.model) === i,
